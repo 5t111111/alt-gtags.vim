@@ -18,6 +18,7 @@ python << EOF
 import vim
 import os
 import tempfile
+import subprocess
 
 DEBUG = True
 
