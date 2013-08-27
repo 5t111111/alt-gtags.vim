@@ -102,17 +102,11 @@ class GtagsCommand(object):
         
         # Making temporary file for the purpose of avoiding a deadlock
         with tempfile.TemporaryFile() as f:
-            if DEBUG:
-                print os.name
-            if os.name == 'nt':
-                shell_flag = False
-            else:
-                shell_flag = True
             proc = subprocess.Popen(cmd_line,
                                     stdin=subprocess.PIPE,
                                     stdout=f,
                                     stderr=subprocess.PIPE,
-                                    shell=shell_flag)
+                                    shell=False)
         
             ret_code = proc.wait()
             self.__output_to_stderr_if_pipe_has_errors(proc)
