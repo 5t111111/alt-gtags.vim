@@ -52,7 +52,7 @@ class Gtags(object):
 		if not len(items) == 4:
 			if DEBUG:
 				print items
-			sys.stderr.write('Unexpected result when parsing an output\n')
+			sys.stderr.write('Unexpected result when parsing an output¥n')
 			# if an unexpected result has occurred, fill a gtags object with dummy data
 			self._name = 'N/A'
 			self._linum = '0'
