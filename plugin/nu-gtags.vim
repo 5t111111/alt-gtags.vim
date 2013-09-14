@@ -6,17 +6,29 @@
 let s:save_cpo = &cpo
 set cpo&vim
 
-" Path to the executed script file
-"let g:path_to_this = expand("<sfile>:p:h")
+function! s:LoadPythonModulePath()
+    for l:i in split(globpath(&runtimepath, "plugin/nu_gtags_lib"), '\n')
+        let s:python_module_path = fnamemodify(l:i, ":p")
+    endfor
+    python << EOF
+import vim
+import site
+
+site.addsitedir(vim.eval('s:python_module_path'))
+EOF
+endfunction
 
 function! s:NuGtags(argline)
-"------------------------------------------------------
+
+    call s:LoadPythonModulePath()
+
 python << EOF
 import vim
 import os
 import tempfile
 import subprocess
 import re
+import chardet
 
 DEBUG = True
 
@@ -46,7 +58,7 @@ class Gtags(object):
         self.__parse(line)
 
     def __parse(self, line):
-        max_split = 2 
+        max_split = 2
         items = line.split(None, max_split)
         if not len(items) == 3:
             if DEBUG:
@@ -75,6 +87,23 @@ class Gtags(object):
 class GtagsCommand(object):
 
     @property
+    def global_cmd(self): return self._global_cmd
+    #@global_cmd.setter
+    #def global_cmd(self, global_cmd): self._global_cmd = global_cmd
+
+    @property
+    def gtags_conf(self): return self._gtags_conf
+    @gtags_conf.setter
+    def gtags_conf(self, gtags_conf): 
+        if os.path.exists(gtags_conf):
+            self._gtags_conf = gtags_conf
+
+    @property
+    def ignore_case(self): return self._ignore_case
+    @ignore_case.setter
+    def ignore_case(self, ignore_case): self._ignore_case = ignore_case
+
+    @property
     def gtags_root(self): return self._gtags_root
     #@gtags_root.setter
     #def gtags_root(self, gtags_root): self._gtags_root = gtags_root
@@ -93,9 +122,14 @@ class GtagsCommand(object):
 
         if os.name == 'nt':
             self._shell_flag = True
+            global_name = 'global.exe'
+            gtags_name = 'gtags.exe'
         else:
             self._shell_flag = False
+            global_name = 'global'
+            gtags_name = 'gtags'
 
+        self._global_cmd = global_name
         dir_path = self.__get_gtags_rootdir(self.__slash_all_path(file_path))
 
         if dir_path == None:
@@ -105,6 +139,7 @@ class GtagsCommand(object):
             self._gtags_root = self.__slash_all_path(dir_path)
 
         self._target_enc = enc
+        self._ignore_case = False
 
     def __slash_all_path(self, path):
         path = path.replace(os.path.sep, u'/')
@@ -115,8 +150,9 @@ class GtagsCommand(object):
         # then print it.
         line = pipe.stderr.readline()
         while line: 
-            GtagsVimIO.print_message(line, 'warn')
-            #sys.stderr.write(line)
+            enc = chardet.detect(line)['encoding']
+            line = line.decode(enc)
+            PrintWrapper.print_message(line.strip(), 'warn', enc)
             line = pipe.stderr.readline()
     
     def __do_it(self, cmd_line):
@@ -124,97 +160,108 @@ class GtagsCommand(object):
         for gtags in self.__run_global(cmd_line):
             gtags_list.append(gtags)
 
-        GtagsVimIO.display_list_in_quickfix(self._gtags_root, gtags_list, self.target_enc)
+        PrintWrapper.display_result(self._gtags_root, gtags_list, self._target_enc)
     
     def __run_global(self, cmd_line):
         # Making temporary file for the purpose of avoiding a deadlock
         with tempfile.TemporaryFile() as f:
-            proc = subprocess.Popen(cmd_line,
-                                    stdout=f,
-                                    stderr=subprocess.PIPE,
-                                    shell=self._shell_flag)
-        
-            ret_code = proc.wait()
-            self.__print_error_if_pipe_has_it(proc)
-            f.seek(0)
-    
-            line = f.readline()
-            while line:
-                enc = EncodingUtils.guess_encoding(line)
-                if not enc == None:
+            with tempfile.TemporaryFile() as f_e:
+                proc = subprocess.Popen(cmd_line,
+                                        stdout=f,
+                                        stderr=f_e,
+                                        shell=self._shell_flag)
+
+                ret_code = proc.wait()
+
+                f_e.seek(0)
+                line = f_e.readline()
+                while line:
+                    enc = chardet.detect(line)['encoding']
+                    line = line.decode(enc)
+                    PrintWrapper.print_message(line.strip(), 'warn', enc)
+                    line = f_e.readline()
+
+                f.seek(0)
+                line = f.readline()
+                while line:
+                    enc = chardet.detect(line)['encoding']
                     line = line.decode(enc)
                     gtags = Gtags(line.strip())
-                else:
-                    # Since failed to get the encoding,
-                    # make dummy Gtags object ...
-                    gtags = Gtags('')
-                yield gtags
-                    
-                line = f.readline()
-    
+                    yield gtags
+                    line = f.readline()
+
     def __get_gtags_rootdir(self, file_path):
 
-        cmd_line = ['global', '-p']
-
+        cmd_line = [self._global_cmd, '-p']
         os.chdir(os.path.dirname(file_path))
-
         gtags_rootdir = None
 
         # Making temporary file for the purpose of avoiding a deadlock
         with tempfile.TemporaryFile() as f:
-            proc = subprocess.Popen(cmd_line,
-                                    stdout=f,
-                                    stderr=subprocess.PIPE,
-                                    shell=self._shell_flag)
-        
-            ret_code = proc.wait()
-            self.__print_error_if_pipe_has_it(proc)
-            f.seek(0)
-    
-            line = f.readline()
+            with tempfile.TemporaryFile() as f_e:
+                proc = subprocess.Popen(cmd_line,
+                                        stdout=f,
+                                        stderr=f_e,
+                                        shell=self._shell_flag)
 
-            if line:
-                enc = EncodingUtils.guess_encoding(line)
-                if not enc == None:
+                ret_code = proc.wait()
+
+                f_e.seek(0)
+                line = f_e.readline()
+                while line:
+                    enc = chardet.detect(line)['encoding']
+                    line = line.decode(enc)
+                    PrintWrapper.print_message(line.strip(), 'warn', enc)
+                    line = f_e.readline()
+
+                f.seek(0)
+                line = f.readline()
+                if line:
+                    enc = chardet.detect(line)['encoding']
                     line = line.decode(enc)
                     gtags_rootdir = line.strip()
-                if DEBUG:
-                    'gtags_rootdir: ' + gtags_rootdir
-                
+
         return gtags_rootdir
 
     def gtags_get_list_of_object(self, file_fullpath):
         file_relpath = os.path.relpath(self.__slash_all_path(file_fullpath), start=self._gtags_root)
-        msg = u'Gtags: Getting the list of the object(s) for [%s].' % (file_relpath)
-        GtagsVimIO.print_message(msg, lvl='info')
         file_relpath = self.__slash_all_path(file_relpath)
         file_relpath = file_relpath.encode(self._target_enc)
-        cmd_line = ['global', '-x', '-f', file_relpath]
+        if self._ignore_case:
+            cmd_line = [self._global_cmd, '-x', '-a', '-f', '-i', file_relpath]
+        else:
+            cmd_line = [self._global_cmd, '-x', '-a', '-f', file_relpath]
         self.__do_it(cmd_line)
 
     def gtags_get_object_definition(self, def_to_find):
-        msg = u'Gtags: Getting the definiton(s) of [%s].' % (def_to_find)
-        GtagsVimIO.print_message(msg, lvl='info')
-        cmd_line = ['global', '-x', def_to_find] 
+        if self._ignore_case:
+            cmd_line = [self._global_cmd, '-x', '-a', '-i', def_to_find] 
+        else:
+            cmd_line = [self._global_cmd, '-x', '-a', def_to_find] 
         self.__do_it(cmd_line)
     
     def gtags_get_object_reference(self, ref_to_find):
-        msg = 'Gtags: Getting the reference(s) of [%s].' % (ref_to_find)
-        GtagsVimIO.print_message(msg, lvl='info')
-        cmd_line = ['global', '-x', '-r', ref_to_find]    
+        if self._ignore_case:
+            cmd_line = [self._global_cmd, '-x', '-a', '-r', '-i', ref_to_find]    
+        else:
+            cmd_line = [self._global_cmd, '-x', '-a', '-r', ref_to_find]    
         self.__do_it(cmd_line)
 
     def gtags_get_symbol_reference(self, sym_to_find):
-        msg = 'Gtags: Getting the symbol reference(s) of [%s].' % (sym_to_find)
-        GtagsVimIO.print_message(msg, lvl='info')
-        cmd_line = ['global', '-x', '-s', sym_to_find]    
+        if self._ignore_case:
+            cmd_line = [self._global_cmd, '-x', '-a', '-s', '-i', sym_to_find]    
+        else:
+            cmd_line = [self._global_cmd, '-x', '-a', '-s', sym_to_find]    
         self.__do_it(cmd_line)
     
     def gtags_grep(self, str_to_grep):
-        cmd_line = ['global', '-x', '-g', '-a', str_to_grep]    
+        if self._ignore_case:
+            cmd_line = [self._global_cmd, '-x', '-a', '-g', '-i', str_to_grep]    
+        else:
+            cmd_line = [self._global_cmd, '-x', '-a', '-g', str_to_grep]    
         self.__do_it(cmd_line)
 
-class GtagsVimIO(object):
+class PrintWrapper(object):
 
     @classmethod
     def print_message(cls, msg, lvl='info', enc='utf_8'):
@@ -226,22 +273,26 @@ class GtagsVimIO(object):
             vim.command('echohl warningmsg | echo "%s" | echohl none' % (msg))
 
     @classmethod
-    def display_list_in_quickfix(cls, gtags_root, gtags_list, target_enc):
-        
+    def display_result(cls, gtags_root, gtags_list, target_enc):
+
+        # no result found
         if len(gtags_list) == 0:
+            msg = u'No result found.'
+            cls.print_message(msg, 'warn')
+            vim.command('cclose')
             return
 
         EFM_SEPARATOR = '[EFM_SEP]'
         GTAGS_EFM = EFM_SEPARATOR.join(['%f', '%l', '%m'])
-    
+
         list_str = u'['
-    
+
         for gtags in gtags_list:
             # replace single quates with double ones to avoid unexpected error or something
             gtags.content = gtags.content.replace("'", '"')
 
             s = EFM_SEPARATOR.join([gtags.path, gtags.linum, gtags.content])
-            
+
             # create the string of the list format
             list_str = u"%s'%s'," % (list_str, s) 
 
@@ -250,8 +301,8 @@ class GtagsVimIO(object):
         # Saving the original efm
         vim.command('let l:efm_org = &efm')
         vim.command('let &efm = "%s"' % (GTAGS_EFM))
-        enc = EncodingUtils.guess_encoding(list_str)
-        list_str = list_str.encode(enc)
+        vim_enc = vim.eval('&encoding')
+        list_str = list_str.encode(vim_enc, errors='replace')
         vim.command('let l:list_str = %s' % (list_str))
 
         gtags_root = gtags_root.encode(target_enc)
@@ -262,57 +313,21 @@ class GtagsVimIO(object):
         vim.command('wincmd p')
         vim.command('let &efm = l:efm_org')
 
-class EncodingUtils(object):
-
-    @classmethod
-    def guess_encoding(cls, s):
-        """
-        Guess the encoding of the data sepecified 
-        """
-        codecs = ('ascii', 'shift_jis', 'euc_jp', 'utf_8')
-
-        if isinstance(s, unicode):
-            f = lambda s, enc: s.encode(enc) and enc
-        else:
-            f = lambda s, enc: s.decode(enc) and enc
-    
-        for codec in codecs:
-            try:
-                f(s, codec)
-                return codec
-            except:
-                pass;
-    
-        return None
-    
-    @classmethod
-    def convert_encoding(cls, s, codec_from, codec_to='utf_8'):
-        """
-        Convert the encoding of the data to the specifed encoding
-        """
-        u_s = s.decode(codec_from)
-        if (isinstance(u_s, unicode)):
-            return u_s.encode(codec_to, errors='ignore') 
-
 def main(arg_line):
 
     cur_buf_name = vim.current.buffer.name
     if cur_buf_name == None:
         msg = u'Gtags: Cannot get the name of the current buffer.'
-        GtagsVimIO.print_message(msg, 'warn')
+        PrintWrapper.print_message(msg, 'warn')
         return
 
-    enc = EncodingUtils.guess_encoding(cur_buf_name)
-    if enc == None:
-        msg = u'Gtags: Cannot get the codec of the name of the current buffer'
-        GtagsVimIO.print_message(msg, 'warn')
-        return
+    enc = chardet.detect(cur_buf_name)['encoding']
     cur_buf_name = cur_buf_name.decode(enc)
 
     gtags_command = GtagsCommand(cur_buf_name, enc)
     if gtags_command.gtags_root == None:
         msg = 'Gtags: Cannot find the gtags root directory for [%s].' % (cur_buf_name)
-        GtagsVimIO.print_message(msg, 'warn')
+        PrintWrapper.print_message(msg, 'warn')
         return
 
     os.chdir(gtags_command.gtags_root)
@@ -326,23 +341,33 @@ def main(arg_line):
             return
         else:
             # gtags <the word on which the cursor is>
+            msg = u'Gtags: Getting the definiton(s) of [%s].' % (cword)
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_object_definition(cword)
             return
 
     if len(args) == 1:
         if args[0] == '-f':
             # gtags -f <the file of the current buffer>
+            msg = u'Gtags: Getting the list of the object(s) for [%s].' % (cur_buf_name)
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_list_of_object(cur_buf_name)
         elif args[0] == '-r':
             # gtags -r <the word on which the cursor is>
             cword = vim.eval('expand("<cword>")')
+            msg = 'Gtags: Getting the reference(s) of [%s].' % (cword)
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_object_reference(cword)
         elif args[0] == '-s':
             # gtags -s <the word on which the cursor is>
             cword = vim.eval('expand("<cword>")')
+            msg = 'Gtags: Getting the symbol reference(s) of [%s].' % (cword)
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_symbol_reference(cword)
         else:
             # gtags -t <the item provided as the argument>
+            msg = u'Gtags: Getting the definiton(s) of [%s].' % (args[0])
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_object_definition(args[0])
     elif len(args) == 2:
         if args[0] == '-f':
@@ -350,9 +375,13 @@ def main(arg_line):
             gtags_command.gtags_get_list_of_object(args[1])
         if args[0] == '-r':
             # gtags -r <the item provided as the argument>
+            msg = 'Gtags: Getting the reference(s) of [%s].' % (args[1])
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_object_reference(args[1])
         if args[0] == '-s':
             # gtags -s <the item provided as the argument>
+            msg = 'Gtags: Getting the symbol reference(s) of [%s].' % (args[1])
+            PrintWrapper.print_message(msg, lvl='info')
             gtags_command.gtags_get_symbol_reference(args[1])
 
 main(vim.eval('a:argline'))
