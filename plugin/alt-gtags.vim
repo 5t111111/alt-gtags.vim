@@ -1,13 +1,13 @@
-"if exists('g:loaded_nu_gtags')
-"  finish
-"endif
-"let g:loaded_nu_gtags = 1
+if exists('g:loaded_alt_gtags')
+  finish
+endif
+let g:loaded_alt_gtags = 1
 
 let s:save_cpo = &cpo
 set cpo&vim
 
 function! s:LoadPythonModulePath()
-    for l:i in split(globpath(&runtimepath, "plugin/nu_gtags_lib"), '\n')
+    for l:i in split(globpath(&runtimepath, "plugin/alt_gtags_lib"), '\n')
         let s:python_module_path = fnamemodify(l:i, ":p")
     endfor
     python << EOF
@@ -18,7 +18,7 @@ site.addsitedir(vim.eval('s:python_module_path'))
 EOF
 endfunction
 
-function! s:NuGtags(argline)
+function! s:AltGtags(argline)
 
     call s:LoadPythonModulePath()
 
@@ -389,8 +389,8 @@ EOF
 "------------------------------------------------------
 endfunction
 
-" Define the set of NuGtags commands
-command! -nargs=* NuGtags call s:NuGtags(<q-args>)
+" Define the set of AltGtags commands
+command! -nargs=* AltGtags call s:AltGtags(<q-args>)
 
 let &cpo = s:save_cpo
 unlet s:save_cpo
