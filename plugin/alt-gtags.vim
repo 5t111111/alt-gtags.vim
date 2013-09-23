@@ -145,23 +145,13 @@ class GtagsCommand(object):
         path = path.replace(os.path.sep, u'/')
         return path
 
-    def __print_error_if_pipe_has_it(self, pipe):
-        # Check if pipe has at least 1 line of error(s) ,
-        # then print it.
-        line = pipe.stderr.readline()
-        while line: 
-            enc = chardet.detect(line)['encoding']
-            line = line.decode(enc)
-            PrintWrapper.print_message(line.strip(), 'warn', enc)
-            line = pipe.stderr.readline()
-    
     def __do_it(self, cmd_line):
         gtags_list = []
         for gtags in self.__run_global(cmd_line):
             gtags_list.append(gtags)
 
         PrintWrapper.display_result(self._gtags_root, gtags_list, self._target_enc)
-    
+
     def __run_global(self, cmd_line):
         # Making temporary file for the purpose of avoiding a deadlock
         with tempfile.TemporaryFile() as f:
