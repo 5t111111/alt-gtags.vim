@@ -1,6 +1,6 @@
-"if exists('g:loaded_altgtags')
-"  finish
-"endif
+if exists('g:loaded_altgtags')
+  finish
+endif
 let g:loaded_altgtags = 1
 
 " Define the set of AltGtags commands
