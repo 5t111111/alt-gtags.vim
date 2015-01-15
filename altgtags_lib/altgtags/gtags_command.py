@@ -277,8 +277,7 @@ class GtagsCommand(object):
             elif args[1] == '--gtags-remake':
                 #self.remake_tags()
                 self._method = 'remake_tags'
-            elif args[1] == '--gtags-update':
-                #self.update_tags()
+            elif args[1] == '--gtags-update' or args[1] == '-u':
                 self._method = 'update_tags'
             else:
                 # gtags -t <the item provided as the argument>
@@ -301,6 +300,8 @@ class GtagsCommand(object):
                 #self.gtags_grep(args[2])
                 self._target_object = args[2]
                 self._method = 'gtags_grep'
+            elif args[1] == '--gtags-update' or args[1] == '-u':
+                self._method = 'update_tags'
             else:
                 return False
         else:
@@ -359,10 +360,15 @@ class GtagsCommand(object):
         self.__invoke_command(cmd_line)
 
     def remake_tags(self):
-        cmd_line = [self._gtags_cmd, '-v', '--gtagsconf', self._gtags_conf]
+        if self._gtags_conf == None:
+            cmd_line = [self._gtags_cmd, '-v']
+        else:
+            cmd_line = [self._gtags_cmd, '-v', '--gtagsconf', self._gtags_conf]
         self.__run_gtags(cmd_line)
 
     def update_tags(self):
-        cmd_line = [self._gtags_cmd, '-i', '-v', '--gtagsconf', self._gtags_conf]
+        if self._gtags_conf == None:
+            cmd_line = [self._gtags_cmd, '-i', '-v']
+        else:
+            cmd_line = [self._gtags_cmd, '-i', '-v', '--gtagsconf', self._gtags_conf]
         self.__run_gtags(cmd_line)
-
